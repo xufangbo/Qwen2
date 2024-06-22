@@ -11,19 +11,18 @@ import platform
 import shutil
 from copy import deepcopy
 from threading import Thread
+from peft import PeftModel  ###################################################################
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
 from transformers.trainer_utils import set_seed
 
-# DEFAULT_CKPT_PATH = 'Qwen/Qwen2-1.5B-Instruct'
-DEFAULT_CKPT_PATH = 'Qwen/Qwen2-7B-Instruct'
-# DEFAULT_CKPT_PATH = 'meta-llama/Meta-Llama-3-8B'
 
- 
+DEFAULT_CKPT_PATH = 'Qwen/Qwen2-1.5B-Instruct'
+
 _WELCOME_MSG = '''\
-Welcome to use Qwen2-Instruct model, type text to start chat, type :h to show command help.
-(欢迎使用 Qwen2-Instruct 模型，输入内容即可进行对话，:h 显示命令帮助。)
+Welcome to use Qwen2-Chat model, type text to start chat, type :h to show command help.
+(欢迎使用 Qwen2-Chat 模型，输入内容即可进行对话，:h 显示命令帮助。)
 
 Note: This demo is governed by the original license of Qwen2.
 We strongly advise users not to knowingly generate or allow others to knowingly generate harmful content, including hate speech, violence, pornography, deception, etc.
@@ -84,9 +83,15 @@ def _load_model_tokenizer(args):
         torch_dtype="auto",
         device_map=device_map,
         resume_download=True,
-        # cache_dir = "/home/kevin/llmmodel" # 设置模型缓存目录
+        cache_dir = "/home/kevin/llmmodel" # 设置模型缓存目录
     ).eval()
+
     model.generation_config.max_new_tokens = 2048    # For chat.
+
+    ########################################################################################
+    # 加载lora权重
+    lora_path = '/home/kevin/git/LLaMA-Factory/saves/Qwen2-1.5B-Chat/lora/test3' 
+    model = PeftModel.from_pretrained(model, model_id=lora_path)    #, config=config
 
     return model, tokenizer
 
@@ -129,13 +134,14 @@ def _get_input() -> str:
 
 
 def _chat_stream(model, tokenizer, query, history):
-    conversation = [
-        {'role': 'system', 'content': 'You are a helpful assistant.'},
-    ]
+    # 为了保持会话历史，把所有的内容都重新问一遍啊? 这么蠢的吗？
+    conversation = [ {'role': 'system', 'content': 'You are a helpful assistant.'}, ]
     for query_h, response_h in history:
         conversation.append({'role': 'user', 'content': query_h})
         conversation.append({'role': 'assistant', 'content': response_h})
+
     conversation.append({'role': 'user', 'content': query})
+
     inputs = tokenizer.apply_chat_template(
         conversation,
         add_generation_prompt=True,
@@ -155,10 +161,8 @@ def _chat_stream(model, tokenizer, query, history):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='QWen2-Instruct command-line interactive chat demo.')
-    parser.add_argument("-c", "--checkpoint-path", type=str, default=DEFAULT_CKPT_PATH,
-                        help="Checkpoint name or path, default to %(default)r")
+    parser = argparse.ArgumentParser( description='Qwen2-Chat command-line interactive chat demo.')
+    parser.add_argument("-c", "--checkpoint-path", type=str, default=DEFAULT_CKPT_PATH, help="Checkpoint name or path, default to %(default)r")
     parser.add_argument("-s", "--seed", type=int, default=1234, help="Random seed")
     parser.add_argument("--cpu-only", action="store_true", help="Run demo with CPU only")
     args = parser.parse_args()
@@ -250,7 +254,7 @@ def main():
         set_seed(seed)
         _clear_screen()
         print(f"\nUser: {query}")
-        print(f"\nQwen2-Instruct: ", end="")
+        print(f"\nQwen2-Chat: ", end="")
         try:
             partial_text = ''
             for new_text in _chat_stream(model, tokenizer, query, history):
